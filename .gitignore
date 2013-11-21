@@ -1,0 +1,5 @@
+img/photos/
+img/slideshow/
+.DS_Store
+*.php~
+admin/tmp

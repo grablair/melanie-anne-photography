@@ -1,0 +1,33 @@
+body {
+	margin: 0;
+	overflow: hidden;
+}
+
+#parallax-container, #content-container {
+	position: fixed;
+	left: 0;
+	top: 0;
+	height: 100%;
+	width: 100%;
+}
+
+#parallax-background {
+	background-image: url(bg.jpg);
+	position: absolute;
+	height: 500px;
+	width: 100%
+}
+
+#content-container {
+	overflow: auto;
+}
+
+#content {
+	margin: 20px auto;
+	background-color: white;
+	color: black;
+	border-radius: 20px;
+	box-shadow: 0 0 30px #444;
+	padding: 20px;
+	width: 800px;
+}
