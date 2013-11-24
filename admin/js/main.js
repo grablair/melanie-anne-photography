@@ -1,3 +1,6 @@
+var WM_W = 1521;
+var WM_H = 681;
+
 $(document).ready(function() {
 	if ($('#logged-in-input').length) {
 		$('.dashboard-button-wrapper').click(launchSection);
@@ -123,7 +126,7 @@ var postGet = {
 		
 		$('section').append(newAlbumHeader, currentGallery, galleryLoading);
 		
-		var insertAlbum = function(header, photos) {
+		var insertAlbum = function(header, albumId, photos) {
 			var photo = photos.head;
 			while (photo != null) {
 				header.find(".album-image-strip").append($('<img />').attr("src", "/img/photos/" + photo.value.thumb));
@@ -156,30 +159,14 @@ var postGet = {
 							$('<img />').attr("src", "img/ajax-ball.gif")
 						).hide();
 						
-						var album = new ModifiableAlbum($("#gallery"), photos, {
+						new ModifiableAlbum(albumId, $("#gallery"), photos, {
 							uploadTrigger: uploadButton,
 							uploadingIndicator: uploadingProgress,
 							uploadCallback: function(imageInfo) {
-								header.find(".album-image-strip").append($('<img />').attr("src", "/img/photos/" + imageInfo.thumb));
-								header.find(".album-small-desc").text(gallery.imageList.length + (gallery.imageList.length == 1 ? " photo" : " photos"))
+								header.find(".album-image-strip").prepend($('<img />').attr("src", "/img/photos/" + imageInfo.thumb));
+								header.find(".album-small-desc").text(photos.length + (photos.length == 1 ? " photo" : " photos"))
 							}
 						});
-						
-						/*			
-						$('#gallery').append(uploadButton, uploadingProgress);
-						
-						var callback = function(imageInfo) {
-							header.find(".album-image-strip").append($('<img />').attr("src", "/img/photos/" + imageInfo.thumb));
-							header.find(".album-small-desc").text(gallery.imageList.length + (gallery.imageList.length == 1 ? " photo" : " photos"))
-						};
-						
-						var gallery = 
-						
-						gallery.setUploadAndProgressAndInsertionPoint(uploadButton, uploadingProgress, uploadButton);
-						gallery.setUploadImageCallback(callback);
-						gallery.setImageList(album.photos);
-						gallery.setCurrentAlbumId(album.id);
-						*/
 						
 						$('#gallery').show("blind", {complete: doneAnimating});
 					};
@@ -211,7 +198,7 @@ var postGet = {
 				)
 			);
 			
-			insertAlbum(header, photos);
+			insertAlbum(header, album.id, photos);
 		}
 		
 		newAlbumHeader.click(function() {
@@ -231,7 +218,8 @@ var postGet = {
 							hideMessage();
 							
 							var album = json.album;
-							var header = $('<header></header>').addClass("album").attr("album-id", album.id).append(
+							var photos = new LinkedList(album.photos);
+							var header = $('<header></header>').addClass("album").attr("album-id", album.id).data("photos", photos).append(
 								$('<div></div>').addClass("album-image-strip"),
 								$('<div></div>').append(
 									$('<span></span>').addClass("album-title").text(album.title),
@@ -239,7 +227,7 @@ var postGet = {
 								)
 							);
 			
-							insertAlbum(header, album);
+							insertAlbum(header, album.id, photos);
 						}, "json").error(generalError);
 					})
 				]
@@ -297,11 +285,12 @@ function unlockScrolling() {
 var gallery = false;
 
 var Album = Class.extend({
-	init: function(container, photos, options) {
+	init: function(albumId, container, photos, options) {
+		this.id = albumId;
 		this.container = container.text("");
 		this.photos = photos;
 		this.lastLoadedPhoto = {next: photos.head, prev: photos.tail};
-		this.options = arguments.length > 2 ? options : null;
+		this.options = arguments.length > 3 ? options : null;
 		
 		while(!this.loadMoreImages());
 	},
@@ -313,21 +302,8 @@ var Album = Class.extend({
 		var currentPhoto = this.lastLoadedPhoto.next;
 		while (currentPhoto != null && loadedPhotos++ < 12) {
 			var imageInfo = currentPhoto.value;
-			var url = "/img/photos/" + imageInfo.thumb;
-			
-			var div = $("<div></div>");
-			div.addClass("gallthumb");
-			div.css("background-image", "url(" + url + ")");
+			var div = this.generateThumbnail(imageInfo);
 			div.data("photoNode", currentPhoto);
-			
-			var ratio = Math.max(140/imageInfo.width, 140/imageInfo.height);
-									
-			div.css("background-size", (ratio * imageInfo.width) + "px " + (ratio * imageInfo.height) + "px");
-			div.css("background-position", "-" + (((ratio * imageInfo.width) - 140) / 2) + "px -" + (((ratio * imageInfo.height) - 140) / 2) + "px");
-			
-			div.click(function(e) {
-				new PhotoViewer($(this).data("photoNode"));
-			});
 			
 			this.addPhoto(div);
 			this.lastLoadedPhoto = currentPhoto;
@@ -339,18 +315,38 @@ var Album = Class.extend({
 	},
 	addPhoto: function(thumbnail) {
 		this.container.append(thumbnail);
+	},
+	generateThumbnail: function(imageInfo) {
+		var url = "/img/photos/" + imageInfo.thumb;
+		
+		var div = $("<div></div>");
+		div.addClass("gallthumb");
+		div.css("background-image", "url(" + url + ")");
+		
+		var ratio = Math.max(140/imageInfo.width, 140/imageInfo.height);
+								
+		div.css("background-size", (ratio * imageInfo.width) + "px " + (ratio * imageInfo.height) + "px");
+		div.css("background-position", "-" + (((ratio * imageInfo.width) - 140) / 2) + "px -" + (((ratio * imageInfo.height) - 140) / 2) + "px");
+		
+		div.click(function(e) {
+			new PhotoViewer($(this).data("photoNode"), {
+				folderPrefix: "/img/photos/"
+			});
+		});
+		
+		return div;
 	}
 });
 
 var ModifiableAlbum = Album.extend({
-	init: function(container, photos, options) {
-		if (arguments.length < 3) {
+	init: function(albumId, container, photos, options) {
+		if (arguments.length < 4) {
 			throw "Must supply options";
 		} else if (!options.hasOwnProperty("uploadTrigger")) {
 			throw "Must supply upload trigger";
 		}
 		
-		this._super(container, photos, options);
+		this._super(albumId, container, photos, options);
 		
 		if (options.hasOwnProperty("uploadingIndicator")) {
 			this.container.prepend(options.uploadingIndicator.hide());
@@ -384,33 +380,56 @@ var ModifiableAlbum = Album.extend({
 			type: "file",
 			multiple: "multiple",
 			accept: ".jpg,.jpeg"
-		}).change((function(viewer) {
+		}).change((function(album) {
 			return function() {
-				viewer.uploadForm.attr("action", "api/gallery.php");
-				viewer.uploadForm.attr("target", 'album_upload_target');
-				viewer.options.uploadTrigger.addClass("disabled");
-				if (viewer.options.hasOwnProperty("uploadingIndicator")) {
-					viewer.options.uploadingIndicator.show();
+				if ($(this).val() == "") {
+					return;
 				}
-				viewer.uploadForm.submit();
-				viewer.uploadFrame.bind("load", function() {
-					$(this).unbind("load");
-					if (this.contentWindow.document.getElementById("imageresult").innerHTML == "") {
+				album.uploadForm.attr("action", "api/gallery.php");
+				album.uploadForm.attr("target", 'album_upload_target');
+				album.options.uploadTrigger.addClass("disabled");
+				if (album.options.hasOwnProperty("uploadingIndicator")) {
+					album.options.uploadingIndicator.show();
+				}
+				var intervalId = setInterval(function() {
+					album.options.uploadTrigger.removeClass("disabled");
+					if (album.options.hasOwnProperty("uploadingIndicator")) {
+						album.options.uploadingIndicator.hide();
+					}
+					
+					
+					var frame = album.uploadFrame[0];
+					var result = frame.contentWindow.document.getElementById("imageresult");
+					if (result == null || result.innerHTML == "") {
 						return;
 					}
-					var imageList = $.parseJSON(this.contentWindow.document.getElementById("imageresult").innerHTML);
-					this.contentWindow.document.getElementById("imageresult").innerHTML = "";
+					
+					clearInterval(intervalId);
+					var imageList = $.parseJSON(frame.contentWindow.document.getElementById("imageresult").innerHTML);
+					frame.contentWindow.document.getElementById("imageresult").innerHTML = "";
 			
 					if (!imageList.hasOwnProperty("error")) {
-						new WatermarkPhotoViewer(new LinkedList(imageList.head));
+						new WatermarkPhotoViewer(new LinkedList(imageList), album.id, function(imageInfo) {
+							album.photos.prepend(imageInfo);
+		
+							var div = album.generateThumbnail(imageInfo);
+							div.data("photoNode", album.photos.head);
+							
+							if (album.container.find(".gallthumb").length) {
+								album.container.find(".gallthumb").first().before(div);
+							} else {
+								album.container.append(div);
+							}
+							if (album.options.hasOwnProperty("uploadCallback")) {
+								album.options.uploadCallback(imageInfo);
+							}
+						});
 					} else {
 						var parts = imageList.error.split("|");
 						newMessage(parts[0], parts[1]);
 					}
-			
-					$('#file_upload_form').show();
-					$('#upload_ajax').hide();
-				});
+				}, 500);
+				album.uploadForm.submit();
 			};
 		})(this));
 		
@@ -470,9 +489,18 @@ var PhotoViewer = Class.extend({
 			})(this));
 		}
 		
+		this.folderPrefix = "/img/photos/";
+		if (arguments.length > 1) {
+			if (options.hasOwnProperty("folderPrefix")) {
+				this.folderPrefix = options.folderPrefix;
+			}
+		}
+		
 		lockScrolling();
 		
-		this.setPhoto(startingPhoto);
+		if (arguments.length < 2 || !options.hasOwnProperty("setImage") || options.setImage) {
+			this.setPhoto(startingPhoto);
+		}
 	},
 	// Destroys the current PhotoViewer.
 	destroy: function() {
@@ -499,14 +527,15 @@ var PhotoViewer = Class.extend({
 		
 		var imageInfo = photoNode.value;
 		var imageId = imageInfo.id;
+		var img;
 		if ($(this.holder).find('img[fullimg="' + imageId + '"]').length) {
-			$(this.holder).find('img[fullimg="' + imageId + '"]').show();
+			img = $(this.holder).find('img[fullimg="' + imageId + '"]').show();
 			this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
 				.css("marginTop", "-" + (imageInfo.height / 2) + "px")
 				.css("cursor", "pointer");
 		} else {
-			var img = $("<img />");
-			img.attr("src", "/img/photos/" + imageInfo.thumb);
+			img = $("<img />");
+			img.attr("src", this.folderPrefix + imageInfo.thumb);
 			img.attr("width", imageInfo.width);
 			img.attr("height", imageInfo.height);
 			this.holder.append(img);
@@ -514,7 +543,7 @@ var PhotoViewer = Class.extend({
 				.css("marginTop", "-" + (imageInfo.height / 2) + "px")
 				.css("cursor", "pointer");
 			
-			var fullImg = $("<img />").attr('src', "/img/photos/" + imageInfo.full).load((function(viewer) {
+			var fullImg = $("<img />").attr('src', this.folderPrefix + imageInfo.full).load((function(viewer) {
 				return function() {
 					if (!this.complete || typeof this.naturalWidth == "undefined" || this.naturalWidth == 0 || viewer.currentPhoto != photoNode) {
 						return;
@@ -528,6 +557,7 @@ var PhotoViewer = Class.extend({
 		}
 		
 		this.resizeImage();
+		return img;
 	},
 	// Resizes the current photo to fit the screen.
 	resizeImage: function() {
@@ -564,6 +594,8 @@ var PhotoViewer = Class.extend({
 			newW = Math.ceil(imgW * (newH / imgH));
 		}
 		
+		this.currentRatio = newW / imgW;
+		
 		currImg.attr("width", newW);
 		currImg.attr("height", newH);
 		
@@ -574,8 +606,13 @@ var PhotoViewer = Class.extend({
 });
 
 var WatermarkPhotoViewer = PhotoViewer.extend({
-	init: function(photoNode) {
-		this._super(photoNode, {lock: true});
+	init: function(photos, albumId, addImageCallback) {
+		this.albumId = albumId;
+		this.addImageCallback = addImageCallback;
+		this.photos = photos;
+		this._super(photos.head, {lock: true, folderPrefix: "tmp/", setImage: false});
+		
+		this.holder.addClass("uploader");
 		
 		this.watermark = $("<img />");
 		this.watermark.attr("src", "img/watermark.png");
@@ -596,19 +633,13 @@ var WatermarkPhotoViewer = PhotoViewer.extend({
 		$(window).bind("mousewheel", (function(uploader) {
 			return function(event) {
 				if (event.originalEvent.wheelDelta >= 0) {
-					uploader.imageList[uploader.currentImage].wm.s += 0.01;
+					uploader.currentPhoto.value.wm.s += 0.01;
 				} else {
-					uploader.imageList[uploader.currentImage].wm.s -= 0.01;
+					uploader.currentPhoto.value.wm.s -= 0.01;
 				}
 				uploader.resizeImage();
 			};
 		})(this));
-		
-		var closer = function(uploader) {
-			return function() {
-				uploader.deconstruct(false);
-			};
-		};
 		
 		this.submitButton = $("<button></button>").text("Submit").click((function(uploader) {
 			return function() {
@@ -616,518 +647,42 @@ var WatermarkPhotoViewer = PhotoViewer.extend({
 			};
 		})(this));
 		
-		this.controls = $("<div></div>").addClass("controls").append(/*
-			$("<button></button>").text("<<").click((function(uploader) {
-				return function() { uploader.previous() };
-			})(this)),*/
+		this.controls = $("<div></div>").addClass("controls").append(
 			$("<button></button>").text("Invert Watermark").click((function(uploader) {
 				return function() {
 					uploader.wmBar.toggleClass("black");
-					uploader.imageList[uploader.currentImage].wmBarWhite = !uploader.imageList[uploader.currentImage].wmBarWhite;
+					uploader.currentPhoto.value.wmBarWhite = !uploader.currentPhoto.value.wmBarWhite;
 				};
 			})(this)),
-			$("<button></button>").text("Cancel Upload").click(closer(this)),
+			$("<button></button>").text("Cancel Upload").click((function(uploader) {
+				return function() { uploader.destroy() };
+			})(this)),
 			this.submitButton
-			/*,
-			$("<button></button>").text(">>").click((function(uploader) {
-				return function() { uploader.next() };
-			})(this))*/
 		);
 		
 		this.holder.append(this.controls);
 		
-		this.bg.click(closer(this));
-		
 		$('body').append(this.bg, this.holder);
-				
-		$(window).resize((function(uploader) {
-			return function(event) {
-				if (uploader.finished) {
-					$(window).unbind(event);
-					return;
-				}
-				
-				uploader.resizeImage();
-			};
-		})(this));
 		
-		/*
-		$(document).keydown((function(uploader) {
-			return function(event) {
-				if (uploader.holder.is(":visible")) {
-					if (event.which == 37) {
-						uploader.previous();
-					} else if (event.which == 39) {
-						uploader.next();
-					}
-				}
-			};
-		})(this));
-		*/
-		
-		for (var i = 0; i < this.imageList.length; i++) {
+		var current = photos.head;
+		while (current != null) {
 			var watermark = {};
 			watermark.x = 0;
 			watermark.y = 0;
-			watermark.s = this.imageList[i].height / 7 / WM_H;
-			this.imageList[i].wm = watermark;
-			this.imageList[i].wmBarWhite = true;
-		}
-	}
-});
-
-var Gallery = Class.extend({
-	init: function(id) {
-		this.holder = $("<div></div>");
-		this.holder.hide();
-		this.holder.attr("id", "galleryimgholder");
-		
-		this.holder.click((function(gallery) {
-			return function() { gallery.next() };
-		})(this));
-		
-		this.bg = $("<div></div>");
-		this.bg.attr("id", "gallerybg");
-		this.bg.hide();
-		
-		this.bg.click((function(gallery) {
-			return function() { gallery.hide() };
-		})(this));
-		
-		$('body').append(this.bg, this.holder);
-		this.currentId = -1;
-		this.loadedImageCount = 0;
-		this.uploadedImages = 0;
-		
-		this.uploadCallback = false;
-				
-		$(window).resize((function(gallery) {
-			return function() { gallery.resizeImage() };
-		})(this));
-		
-		$(document).keydown((function(gallery) {
-			return function(event) {
-				if (gallery.holder.is(":visible")) {
-					if (event.which == 37) {
-						gallery.previous();
-					} else if (event.which == 39) {
-						gallery.next();
-					} else if (event.which == 27) {
-						gallery.hide();
-					}
-				}
-			};
-		})(this));
-		
-		$('#file').change((function(gallery) {
-			return function() {
-				$('#file_upload_form').attr("action", "api/gallery.php");
-				$('#file_upload_form').attr("target", 'upload_target'); //'upload_target' is the name of the iframe
-				gallery.uploadButton.hide();
-				gallery.uploadProgress.show();
-				$('#file_upload_form').submit();
-			};
-		})(this));
-			
-		
-		setInterval(this.checkUpload, 100);
-		setInterval(this.triggerLoadMore, 500);
-	},
-	setCurrentAlbumId: function(id) {
-		this.albumId = id;
-	},
-	setImageList: function(images) {
-		this.imageList = images;
-		this.loadedImageCount = 0;
-		this.uploadedImages = 0;
-		this.currentId = -1;
-		this.holder.find("img").remove();
-		$('#gallery .gallthumb').remove();
-		if (images == null) {
-			$('noimages').show();
-		}
-		if (this.loadMoreImages()) $('#galleryloading').show();
-		else $('#galleryloading').hide();
-	},
-	show: function(imageId) {
-		this.setImage(parseInt(imageId));
-		
-		this.bg.show();;
-		this.holder.show();
-		
-		this.resizeImage();
-		
-		var scrollPosition = [
-			self.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft,
-			self.pageYOffset || document.documentElement.scrollTop  || document.body.scrollTop
-		];
-		
-		var html = jQuery('html'); // it would make more sense to apply this to body, but IE7 won't have that
-		html.data('scroll-position', scrollPosition);
-		html.data('previous-overflow', html.css('overflow'));
-		html.css('overflow', 'hidden');
-		window.scrollTo(scrollPosition[0], scrollPosition[1]);
-	},
-	hide: function() {
-		this.bg.hide();
-		this.holder.hide();
-		
-		var html = jQuery('html');
-		var scrollPosition = html.data('scroll-position');
-		html.css('overflow', html.data('previous-overflow'));
-		window.scrollTo(scrollPosition[0], scrollPosition[1])
-	},
-	next: function() {
-		this.setImage(this.currentId + 1);
-	},
-	previous: function() {
-		this.setImage(this.currentId - 1);
-	},
-	setImage: function(imageId) {
-		if (imageId >= 0 && imageId < this.imageList.length) {
-			this.currentId = parseInt(imageId);
-			$(this.holder).find("img").hide();
-			var imageInfo = this.imageList[imageId];
-			if ($(this.holder).find('img[fullimg="' + imageId + '"]').length) {
-				$(this.holder).find('img[fullimg="' + imageId + '"]').show();
-				this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
-					.css("marginTop", "-" + (imageInfo.height / 2) + "px")
-					.css("cursor", "pointer");
-				this.resizeImage();
-				return;
-			} 
-			var img = $("<img />");
-			img.attr("src", "/img/photos/" + imageInfo.thumb);
-			img.attr("width", imageInfo.width);
-			img.attr("height", imageInfo.height);
-			this.holder.append(img);
-			this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
-				.css("marginTop", "-" + (imageInfo.height / 2) + "px")
-				.css("cursor", "pointer");
-				
-			var fullImg = $("<img />").attr('src', "/img/photos/" + imageInfo.full).load(function() {
-				if (!this.complete || typeof this.naturalWidth == "undefined" || this.naturalWidth == 0 || gallery.currentId != imageId) {
-					return;
-				} else {
-					img.replaceWith(fullImg);
-					fullImg.attr("fullimg", imageId);
-					gallery.resizeImage();
-				}
-			});
-			
-			this.resizeImage();
-		}
-	},
-	triggerLoadMore: function() {
-		if (isScrolledIntoView($("#galleryloading"))) {
-			if (!this.loadMoreImages()) {
-				$('#galleryloading').hide();
-			}
-		}
-	},
-	loadMoreImages: function() {
-		var before = this.loadedImageCount;
-		var i;
-		for (i = 0; i < 12 && this.loadedImageCount < this.imageList.length - this.uploadedImages; i++) {
-			var imageInfo = this.imageList[this.loadedImageCount];
-			var url = "/img/photos/" + imageInfo.thumb;
-			
-			var div = $("<div></div>");
-			div.attr("id", "gallimg_" + this.loadedImageCount);
-			div.addClass("gallthumb");
-			div.css("background-image", "url(" + url + ")");
-			
-			var ratio = Math.max(140/imageInfo.width, 140/imageInfo.height);
-									
-			div.css("background-size", (ratio * imageInfo.width) + "px " + (ratio * imageInfo.height) + "px");
-			div.css("background-position", "-" + (((ratio * imageInfo.width) - 140) / 2) + "px -" + (((ratio * imageInfo.height) - 140) / 2) + "px");
-			
-			div.click(function(e) {
-				gallery.show(parseInt(e.target.id.substring(8)));
-			});
-			
-			this.insertionPoint.before(div);
-			this.loadedImageCount++;
-		}
-		if (this.imageList.length == 0) {
-			$('#noimages').show();
-		}
-		if (i < 12) return false;
-		return true;
-	},
-	resizeImage: function() {
-		if (this.holder.find("img:visible").length) {
-			var currImg = this.holder.find("img:visible");
-			var imageInfo = this.imageList[this.currentId];
-			currImg.attr("width", imageInfo.width);
-			currImg.attr("height", imageInfo.height);
-			
-			var winW = 630, winH = 460;
-			if (document.body && document.body.offsetWidth) {
-				winW = document.body.offsetWidth;
-				winH = document.body.offsetHeight;
-			}
-			if (document.compatMode=='CSS1Compat' &&
-					document.documentElement &&
-					document.documentElement.offsetWidth) {
-				winW = document.documentElement.offsetWidth;
-				winH = document.documentElement.offsetHeight;
-			}
-			if (window.innerWidth && window.innerHeight) {
-				winW = window.innerWidth;
-				winH = window.innerHeight;
-			}
-			
-			var imgW = parseInt(currImg.attr("width")), imgH = parseInt(currImg.attr("height"));
-			var newW = imgW, newH = imgH;
-			if (winW < imgW + (window.innerWidth * 0.2)) {
-				newW = winW - (window.innerWidth * 0.2);
-				newH = Math.ceil(imgH * (newW / imgW));
-			}
-			
-			if (winH < newH + (window.innerHeight * 0.2)) {
-				newH = winH - (window.innerHeight * 0.2);
-				newW = Math.ceil(imgW * (newH / imgH));
-			}
-			
-			
-			
-			currImg.attr("width", newW);
-			currImg.attr("height", newH);
-			
-			this.holder.css("marginLeft", "-" + ((newW / 2) + 1) + "px")
-					.css("marginTop", "-" + (newH / 2) + "px")
-					.css("cursor", "pointer");
-		}
-	},
-	setUploadAndProgressAndInsertionPoint: function(uploadButton, uploadProgress, insertionPoint) {
-		uploadButton.click(function() {
-			$('#file').trigger("click");
-		});
-		this.uploadButton = uploadButton;
-		this.uploadProgress = uploadProgress;
-		this.insertionPoint = insertionPoint;
-	},
-	setUploadImageCallback: function(callback) {
-		this.uploadCallback = callback;
-	},
-	checkUpload: function() {
-		if ($iFrame('imageresult')) {
-			var resultSpan = $iFrame('imageresult');
-			if (resultSpan.innerHTML == "") {
-				return;
-			}
-			var imageList = $.parseJSON(resultSpan.innerHTML);
-			resultSpan.innerHTML = "";
-			
-			if (!imageList.hasOwnProperty("error")) {
-				var uploader = new Uploader(imageList, gallery);
-				uploader.show(0);
-			} else {
-				var parts = imageList.error.split("|");
-				newMessage(parts[0], parts[1]);
-			}
-			
-			$('#file_upload_form').show();
-			$('#upload_ajax').hide();
-		}
-	},
-	addImage: function(imageInfo) {
-		var id;
-		if (this.imageList == null) {
-			id = 0;
-			this.imageList = [imageInfo];
-		} else {
-			id = this.imageList.length;
-			this.imageList.push(imageInfo);
+			watermark.s = current.value.height / 7 / WM_H;
+			current.value.wm = watermark;
+			current.value.wmBarWhite = true;
+			current = current.next;
 		}
 		
-		var url = "/img/photos/" + imageInfo.thumb;
-		
-		var div = $("<div></div>");
-		div.attr("id", "gallimg_" + id);
-		div.addClass("uploaded, gallthumb");
-		div.css("background-image", "url(" + url + ")");
-		
-		var ratio = Math.max(140/imageInfo.width, 140/imageInfo.height);
-
-		div.css("background-size", (ratio * imageInfo.width) + "px " + (ratio * imageInfo.height) + "px");
-		div.css("background-position", "-" + (((ratio * imageInfo.width) - 140) / 2) + "px -" + (((ratio * imageInfo.height) - 140) / 2) + "px");
-		
-		div.click(function(e) {
-			var tmpId = parseInt(e.target.id.substring(8));
-			gallery.show(tmpId);
-		});
-		
-		this.insertionPoint.before(div);
-		this.uploadedImages++;
-		this.uploadCallback(imageInfo);
+		this.setPhoto(photos.head);
 	},
-	uploadComplete: function() {
-		this.uploadButton.show();
-		this.uploadProgress.hide();
-	}
-});
-
-var $iFrame = function(id) {
-	if ( $('#upload_target')[0].contentDocument ) 
-	{ // FF
-		return $('#upload_target')[0].contentDocument.getElementById(id);
-	}
-	else if ( $('#upload_target')[0].contentWindow ) 
-	{ // IE
-		return $('#upload_target')[0].contentWindow.document.getElementById(id);
-	}
-	
-	return false;
-}
-
-function isScrolledIntoView(elem) {
-	if (!$(elem).length || !$(elem).is(":visible")) {
-		return false;
-	}
-	
-    var docViewTop = $(window).scrollTop();
-    var docViewBottom = docViewTop + $(window).height();
-
-    var elemTop = $(elem).offset().top;
-    var elemBottom = elemTop + $(elem).height();
-
-    return ((elemBottom <= docViewBottom) && (elemTop >= docViewTop));
-}
-
-var WM_W = 1521;
-var WM_H = 681;
-
-var UPLOADER = false;
-
-var Uploader = Class.extend({
-	init: function(images, gallery) {
-		UPLOADER = this;
-		
-		this.album = gallery;
-		
-		this.imageList = images;
-		this.currentImage = 0;
-		
-		this.holder = $("<div></div>");
-		this.holder.hide();
-		this.holder.attr("id", "uploaderimgholder");
-		
-		this.bg = $("<div></div>");
-		this.bg.attr("id", "uploaderbg");
-		this.bg.addClass("lockable");
-		this.bg.hide();
-		
-		this.watermark = $("<img />");
-		this.watermark.attr("src", "img/watermark.png");
-		this.watermark.addClass("watermark");
-		this.holder.prepend(this.watermark);
-		
-		this.wmBar = $("<div></div>").addClass("wm-bar");
-		this.holder.prepend(this.wmBar);
-
-		this.watermark.draggable().on("drag", (function(uploader) {
-			return function(event, ui) {
-				uploader.imageList[uploader.currentImage].wm.x = Math.floor(ui.position.left / uploader.currentRatio);
-				uploader.imageList[uploader.currentImage].wm.y = Math.floor(ui.position.top / uploader.currentRatio);
-				uploader.wmBar.css("top", ui.position.top + "px");
-			};
-		})(this));
-		
-		$(window).bind("mousewheel", (function(uploader) {
-			return function(event) {
-				if (event.originalEvent.wheelDelta >= 0) {
-					uploader.imageList[uploader.currentImage].wm.s += 0.01;
-				} else {
-					uploader.imageList[uploader.currentImage].wm.s -= 0.01;
-				}
-				uploader.resizeImage();
-			};
-		})(this));
-		
-		var closer = function(uploader) {
-			return function() {
-				uploader.deconstruct(false);
-			};
-		};
-		
-		this.submitButton = $("<button></button>").text("Submit").click((function(uploader) {
-			return function() {
-				uploader.submitImage();
-			};
-		})(this));
-		
-		this.controls = $("<div></div>").addClass("controls").append(/*
-			$("<button></button>").text("<<").click((function(uploader) {
-				return function() { uploader.previous() };
-			})(this)),*/
-			$("<button></button>").text("Invert Watermark").click((function(uploader) {
-				return function() {
-					uploader.wmBar.toggleClass("black");
-					uploader.imageList[uploader.currentImage].wmBarWhite = !uploader.imageList[uploader.currentImage].wmBarWhite;
-				};
-			})(this)),
-			$("<button></button>").text("Cancel Upload").click(closer(this)),
-			this.submitButton
-			/*,
-			$("<button></button>").text(">>").click((function(uploader) {
-				return function() { uploader.next() };
-			})(this))*/
-		);
-		
-		this.holder.append(this.controls);
-		
-		this.bg.click(closer(this));
-		
-		$('body').append(this.bg, this.holder);
-				
-		$(window).resize((function(uploader) {
-			return function(event) {
-				if (uploader.finished) {
-					$(window).unbind(event);
-					return;
-				}
-				
-				uploader.resizeImage();
-			};
-		})(this));
-		
-		/*
-		$(document).keydown((function(uploader) {
-			return function(event) {
-				if (uploader.holder.is(":visible")) {
-					if (event.which == 37) {
-						uploader.previous();
-					} else if (event.which == 39) {
-						uploader.next();
-					}
-				}
-			};
-		})(this));
-		*/
-		
-		for (var i = 0; i < this.imageList.length; i++) {
-			var watermark = {};
-			watermark.x = 0;
-			watermark.y = 0;
-			watermark.s = this.imageList[i].height / 7 / WM_H;
-			this.imageList[i].wm = watermark;
-			this.imageList[i].wmBarWhite = true;
-		}
-	},
-	deconstruct: function(force) {
-		var uploader = this;
-		var deconstructFunc = function() {
-			hideMessage();
-			unlockScrolling();
-			uploader.holder.remove();
-			uploader.bg.remove();
-			uploader.album.uploadComplete();
-		};
+	destroy: function(flag) {
+		var force = arguments.length > 0 && flag;
 		
 		if (force) {
-			deconstructFunc();
+			hideMessage();
+			this._super();
 			return;
 		}
 		
@@ -1135,133 +690,56 @@ var Uploader = Class.extend({
 					"Are you sure you want to cancel the upload?",
 					[
 						$('<button></button>').text("No").click(hideMessage),
-						$('<button></button>').text("Yes").click(deconstructFunc)
+						$('<button></button>').text("Yes").click((function(uploader) {
+							return function() {
+								uploader.destroy(true);
+							};
+						})(this))
 					]
 		);
 	},
-	resizeImage: function() {
-		if (this.holder.find("img:visible:not(.watermark)").length) {
-			var currImg = this.holder.find("img:visible:not(.watermark)");
-			var imageInfo = this.imageList[this.currentImage];
-			currImg.attr("width", imageInfo.width);
-			currImg.attr("height", imageInfo.height);
-			
-			var winW = 630, winH = 460;
-			if (document.body && document.body.offsetWidth) {
-				winW = document.body.offsetWidth;
-				winH = document.body.offsetHeight;
-			}
-			if (document.compatMode=='CSS1Compat' &&
-					document.documentElement &&
-					document.documentElement.offsetWidth) {
-				winW = document.documentElement.offsetWidth;
-				winH = document.documentElement.offsetHeight;
-			}
-			if (window.innerWidth && window.innerHeight) {
-				winW = window.innerWidth;
-				winH = window.innerHeight;
-			}
-			
-			var imgW = parseInt(currImg.attr("width")), imgH = parseInt(currImg.attr("height"));
-			var newW = imgW, newH = imgH;
-			if (winW < imgW + (window.innerWidth * 0.2)) {
-				newW = winW - (window.innerWidth * 0.2);
-				newH = Math.ceil(imgH * (newW / imgW));
-			}
-			
-			if (winH < newH + (window.innerHeight * 0.2)) {
-				newH = winH - (window.innerHeight * 0.2);
-				newW = Math.ceil(imgW * (newH / imgH));
-			}
-			
-			this.currentRatio = newW / imgW;
-			
-			this.watermark.css("left", Math.floor(imageInfo.wm.x * this.currentRatio) + "px")
-					.css("top", Math.floor(imageInfo.wm.y * this.currentRatio) + "px")
-					.width(Math.floor(WM_W * imageInfo.wm.s * this.currentRatio))
-					.height(Math.floor(WM_H * imageInfo.wm.s * this.currentRatio));
-			
-			this.wmBar.css("top", Math.floor(imageInfo.wm.y * this.currentRatio) + "px")
-				.height(Math.floor(WM_H * imageInfo.wm.s * this.currentRatio)).toggleClass("black", !imageInfo.wmBarWhite);
-			
-			currImg.attr("width", newW);
-			currImg.attr("height", newH);
-			
-			this.holder.css("marginLeft", "-" + ((newW / 2) + 1) + "px")
-					.css("marginTop", "-" + (newH / 2 + 20) + "px");
-		}
-	},
-	next: function() {
-		this.setImage(this.currentImage + 1);
-	},
-	previous: function() {
-		this.setImage(this.currentImage - 1);
-	},
-	show: function(imageId) {
-		this.setImage(parseInt(imageId));
+	prev: function() { /* no-op */ },
+	next: function() { /* no-op */ },
+	setPhoto: function(photoNode) {
+		var imageInfo = photoNode.value;
 		
-		this.bg.show();
-		this.holder.show();
+		this.holder.find("img:not(.watermark)").remove();
+		this.currentPhoto = photoNode;
+		
+		var img = $("<img />");
+		img.attr("src", imageInfo.filepath);
+		img.attr("width", imageInfo.width);
+		img.attr("height", imageInfo.height);
+		this.holder.prepend(img);
+		this.watermark.draggable("option", "containment", img);
+		this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
+			.css("marginTop", "-" + (imageInfo.height / 2) + "px");
 		
 		this.resizeImage();
-		
-		var scrollPosition = [
-			self.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft,
-			self.pageYOffset || document.documentElement.scrollTop  || document.body.scrollTop
-		];
-		
-		lockScrolling();
 	},
-	setImage: function(imageId) {
-		if (imageId >= 0 && imageId < this.imageList.length) {
-			this.currentImage = parseInt(imageId);
-			$(this.holder).find("img:not(.watermark)").hide();
-			var imageInfo = this.imageList[imageId];
-			
-			/*
-			this.holder.find(".controls button").show();
-			
-			if (imageId == 0) {
-				this.holder.find(".controls button").first().hide();
-			}
-			
-			if (imageId == this.imageList.length - 1) {
-				this.holder.find(".controls button").last().hide();
-			}
-			*/
-			
-			if ($(this.holder).find('img[fullimg="' + imageId + '"]').length) {
-				$(this.holder).find('img[fullimg="' + imageId + '"]').show();
-				this.watermark.draggable("option", "containment", $(this.holder).find('img[fullimg="' + imageId + '"]'));
-				this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
-					.css("marginTop", "-" + (imageInfo.height / 2) + "px");
-				this.resizeImage();
-				return;
-			} 
-			
-			var img = $("<img />");
-			img.attr("src", imageInfo.filepath);
-			img.attr("width", imageInfo.width);
-			img.attr("height", imageInfo.height);
-			img.attr("fullimg", imageId);
-			this.holder.prepend(img);
-			this.watermark.draggable("option", "containment", img);
-			this.holder.css("marginLeft",  "-" + ((imageInfo.width / 2) + 1) + "px")
-				.css("marginTop", "-" + (imageInfo.height / 2) + "px");
-			
-			this.resizeImage();
-		}
+	resizeImage: function() {
+		this._super();
+		
+		var imageInfo = this.currentPhoto.value;
+		
+		this.watermark.css("left", Math.floor(imageInfo.wm.x * this.currentRatio) + "px")
+				.css("top", Math.floor(imageInfo.wm.y * this.currentRatio) + "px")
+				.width(Math.floor(WM_W * imageInfo.wm.s * this.currentRatio))
+				.height(Math.floor(WM_H * imageInfo.wm.s * this.currentRatio));
+		
+		this.wmBar.css("top", Math.floor(imageInfo.wm.y * this.currentRatio) + "px")
+			.height(Math.floor(WM_H * imageInfo.wm.s * this.currentRatio)).toggleClass("black", !imageInfo.wmBarWhite);
 	},
 	submitImage: function() {
 		this.submitButton.prop("disabled", true).text("Submitting...");
-		$.post("api/gallery.php", {action: "submit", album_id: this.album.albumId, image: this.imageList[this.currentImage]}, (function(uploader) {
+		$.post("api/gallery.php", {action: "submit", album_id: this.albumId, image: this.currentPhoto.value}, (function(uploader) {
 			return function(json) {
-				uploader.album.addImage(json.image_info);
+				uploader.addImageCallback(json.image_info);
 				
-				if (uploader.currentImage == uploader.imageList.length - 1) {
-					uploader.deconstruct(true);
+				if (uploader.currentPhoto.next == null) {
+					uploader.destroy(true);
 				} else {
-					uploader.next();
+					uploader.setPhoto(uploader.currentPhoto.next);
 					uploader.submitButton.prop("disabled", false).text("Submit");
 				}
 			};
@@ -1269,15 +747,91 @@ var Uploader = Class.extend({
 	}
 });
 
-function objToString(obj) {
-    var str = '';
-    for (var p in obj) {
-        if (obj.hasOwnProperty(p)) {
-            str += p + '::' + obj[p] + '\n';
-        }
-    }
-    return str;
-}
+var LinkedList = Class.extend({
+	init: function(array) {
+		this.head = this.tail = null;
+		this.length = 0;
+		
+		if (arguments.length > 0) {
+			for (var i = 0; i < array.length; i++) {
+				this.append(array[i]);
+			}
+		}
+	},
+	prepend: function(value) {
+		if (this.head == null) {
+			this.head = this.tail = {
+				value: value,
+				prev: null,
+				next: null
+			};
+		} else {
+			var temp = this.head;
+			this.head = {
+				value: value,
+				prev: null,
+				next: this.head
+			};
+			temp.prev = this.head;
+		}
+		
+		this.length++;
+		return this.head;
+	},
+	append: function(value) {
+		if (this.head == null) {
+			this.head = this.tail = {
+				value: value,
+				prev: null,
+				next: null
+			};
+		} else {
+			var temp = this.tail;
+			this.tail = {
+				value: value,
+				prev: this.tail,
+				next: null
+			};
+			temp.next = this.tail;
+		}
+		
+		this.length++;
+		return this.tail;
+	},
+	getNodeAt: function(index) {
+		if (index >= this.length) {
+			throw "IndexOutOfBounds: " + index;
+		}
+		
+		var current;
+		if (index <= this.length / 2) {
+			current = this.tail;
+			for (var i = this.length; i > index; i--) {
+				current = current.prev;
+			}
+		} else {
+			current = this.head;
+			for (var i = 0; i < index; i++) {
+				current = current.next;
+			}
+		}
+		
+		return current;
+	},
+	toArray: function() {
+		var result = [];
+		var current = this.head;
+		while (current != null) {
+			result.push(current.value);
+		}
+		return result;
+	}
+});
+
+
+
+var WM_W = 1521;
+var WM_H = 681;
 
 
 
@@ -1365,75 +919,3 @@ function generalError() {
 
 
 
-var LinkedList = Class.extend({
-	init: function(array) {
-		this.head = this.tail = null;
-		this.length = 0;
-		
-		if (arguments.length > 0) {
-			for (var i = 0; i < array.length; i++) {
-				this.append(array[i]);
-			}
-		}
-	},
-	prepend: function(value) {
-		if (this.head == null) {
-			this.head = this.tail = {
-				value: value,
-				prev: null,
-				next: null
-			};
-		} else {
-			var temp = this.tail;
-			this.head = {
-				value: value,
-				prev: null,
-				next: this.head
-			};
-			temp.prev = this.head;
-		}
-		
-		this.length++;
-		return this.head;
-	},
-	append: function(value) {
-		if (this.head == null) {
-			this.head = this.tail = {
-				value: value,
-				prev: null,
-				next: null
-			};
-		} else {
-			var temp = this.tail;
-			this.tail = {
-				value: value,
-				prev: this.tail,
-				next: null
-			};
-			temp.next = this.tail;
-		}
-		
-		this.length++;
-		return this.tail;
-	},
-	getNodeAt: function(index) {
-		if (index >= this.length) {
-			throw "IndexOutOfBounds: " + index;
-		}
-		
-		var current;
-		if (index <= this.length / 2) {
-			current = this.tail;
-			for (var i = this.length; i > index; i--) {
-				current = current.prev;
-			}
-		} else {
-			current = this.head;
-			for (var i = 0; i < index; i++) {
-				current = current.next;
-			}
-		}
-		
-		return current;
-	}
-});

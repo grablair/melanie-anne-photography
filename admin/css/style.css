@@ -353,11 +353,19 @@ header.album.new-album div {
 	cursor: pointer;
 	display: inline-block;
 	border-radius: 70px;
+	
+	-webkit-transition: .2s ease-in-out;
+	-moz-transition: .2s ease-in-out;
+	-o-transition: .2s ease-in-out;
 }
 
 
 .gallthumb:hover, .upload-photo-btn:hover {
 	opacity:0.8;
+	
+	-webkit-transition: .2s ease-in-out;
+	-moz-transition: .2s ease-in-out;
+	-o-transition: .2s ease-in-out;
 }
 
 .upload-photo-btn {
@@ -437,11 +445,11 @@ header.album.new-album div {
 	padding-top: 25px;
 }
 
-#uploaderimgholder img {
+.photo-viewer-holder.uploader img {
 	border-radius: 0;
 }
 
-#uploaderimgholder .controls {
+.photo-viewer-holder.uploader .controls {
 	padding: 5px 0 5px;
 	background-color: white;
 	border-radius: 0 0 20px 20px;
@@ -449,7 +457,7 @@ header.album.new-album div {
 	text-align: center;
 }
 
-#uploaderimgholder .controls button {
+.photo-viewer-holder.uploader .controls button {
 	font-size: 15px;
 }
 
