@@ -66,15 +66,17 @@ function showSection(section, title, icon) {
 }
 
 var postGet = {
+	
+	
 	blog: function(json) {
-		for (var i = 0; i < json.posts.length; i++) {
-			var post = json.posts[i];
-			var header = $('<header></header>').attr("post-id", post.id).text(post.title);
+		var createBlogPostItems = function(post, headerTitle, saveCallback) {
+			var header = $('<header></header>').attr("post-id", post.id).text(headerTitle);
 			
 			var title = $('<input></input>').attr("type", "text").attr("placeholder", "Title").val(post.title);
 			var content = $('<textarea></textarea>').attr("placeholder", "Type blog post here...").text(post.content);
 			
-			var saveButton = $('<button></button>').attr("post-id", post.id).text("Save").prop("disabled", true).click(resetFields([title, content]));
+			var saveButton = $('<button></button>').attr("post-id", post.id).text("Save").prop("disabled", true);
+			saveButton.click(saveCallback(header, title, content, saveButton));
 			
 			var article = $('<article></article>').attr("post-id", post.id).append(
 				title,
@@ -104,8 +106,50 @@ var postGet = {
 				thisArticle.find("textarea").keyup();
 			});
 			
-			$('section').append(header, article);
-			article.hide();
+			return {header: header, article: article};
+		};
+		
+		var normalSaveFunc = function(header, title, content, saveButton) {
+			return function() {
+				saveButton.add(title).add(content).prop("disabled", true);
+				$.post("api/blog.php", {action: "update", id: parseInt(header.attr("post-id")), title: title.val(), content: content.val()}, function(json) {
+					header.text(title.val());
+					resetFields([title, content]);
+					title.add(content).prop("disabled", false);
+				}).error(function() {
+					saveButton.add(title).add(content).prop("disabled", false);
+					newMessage("Server Error", "There was an error updating the blog post. Try again.");
+				});
+			};
+		};
+		
+		var newBlogPostElements = createBlogPostItems({id: 0, title: "", content: ""}, "New Blog Post", function(header, title, content, saveButton) {
+			return function() {
+				saveButton.add(title).add(content).prop("disabled", true);
+				$.post("api/blog.php", {action: "create", title: title.val(), content: content.val()}, function(json) {
+					title.add(content).prop("disabled", false);
+					title.val("");
+					content.val("");
+					resetFields([title, content]);
+					
+					newBlogPostElements.article.hide();
+					var elements = createBlogPostItems(json, json.title, normalSaveFunc);
+					newBlogPostElements.article.after(elements.header, elements.article);
+					elements.article.find("input").focus();
+				}, "json").error(function() {
+					saveButton.add(title).add(content).prop("disabled", false);
+					newMessage("Server Error", "There was an error creating the blog post. Try again.");
+				});
+			};
+		});
+		
+		$('section').append(newBlogPostElements.header, newBlogPostElements.article);
+		newBlogPostElements.article.hide();
+		
+		for (var i = 0; i < json.posts.length; i++) {
+			var elements = createBlogPostItems(json.posts[i], json.posts[i].title, normalSaveFunc);
+			$('section').append(elements.header, elements.article);
+			elements.article.hide();
 		}
 		
 		$('section[type="blog"]').on('keyup', 'textarea', function () {
@@ -113,6 +157,8 @@ var postGet = {
 			$(this).height(this.scrollHeight);
 		});
 	},
+	
+	
 	gallery: function(json) {
 		var newAlbumHeader = $('<header></header>').addClass("album new-album").append(
 			$('<div></div>').addClass("album-image-strip"),
@@ -234,6 +280,8 @@ var postGet = {
 			);
 		});
 	},
+	
+	
 	clients: function(json) {
 	
 	}
@@ -246,13 +294,9 @@ function setEditFlag() {
 }
 
 function resetFields(elements) {
-	return function() {
-		$(elements).each(function() {
-			$(this).data("original", $(this).val()).attr("edited", false);
-		});
-		
-		$(this).prop("disabled", true);
-	}
+	$(elements).each(function() {
+		$(this).data("original", $(this).val()).attr("edited", false);
+	});
 }
 
 function lockScrolling() {
@@ -913,9 +957,3 @@ function ajaxError(jqXHR) {
 function generalError() {
 	newMessage("Server Error", "There was an error.");
 }
-
-
-
-
-
-
